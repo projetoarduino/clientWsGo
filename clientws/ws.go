@@ -1,4 +1,4 @@
-package main
+package clientws
 
 import (
 	"log"
@@ -8,37 +8,50 @@ import (
 
 var channelWriteSocket chan string
 
-func Ws(url string){
+type Socket struct {
+	Url         string
+	OnOpen		func()
+	OnMessage	func(m string)
+	OnClose		func()
+}
+
+func New(url string) Socket {
+	return Socket{
+		Url: url,
+	}
+}
+
+func (socket *Socket) Connect(){
 	channelReadSocket := make(chan string)
 	channelWriteSocket = make(chan string)
 	channelHealthCheck := make(chan bool)	
 
-	c, err := RegisterWebsocketServer(url)	
+	c, err := RegisterWebsocketServer(socket.Url)	
 
 	for err {
 		log.Println("error on connect trying Connect...")
-		c, err = RegisterWebsocketServer(url)
+		c, err = RegisterWebsocketServer(socket.Url)
 		time.Sleep(5 * time.Second)
 	}
 
 	ReadSocketMessage(c, channelReadSocket)
 	HealthCheck(c, channelHealthCheck)
 	SendSocketMessage(c, channelWriteSocket)
-	OnOpen()
+	socket.OnOpen()
 	
 	for {
 		select {
 		case message := <-channelReadSocket:
 			log.Println("----------------------- Processando Mensagens Websocket -----------------------\n")
-			OnMessage(message)
+			socket.OnMessage(message)
 
 		case t2 := <-channelHealthCheck:
 			if t2 == true {				
-				OnClose()
+				socket.OnClose()
 
-				c, err = RegisterWebsocketServer(url)
+				c, err = RegisterWebsocketServer(socket.Url)
 				for err {
-					c, err = RegisterWebsocketServer(url)
+					c, err = RegisterWebsocketServer(socket.Url)
 					
 					time.Sleep(5 * time.Second)
 					if err == false {
@@ -51,7 +64,7 @@ func Ws(url string){
 				ReadSocketMessage(c, channelReadSocket)
 				HealthCheck(c, channelHealthCheck)
 				SendSocketMessage(c, channelWriteSocket)
-				OnOpen()	
+				socket.OnOpen()	
 			} else {
 				log.Println("connection is up.")
 			}		
@@ -60,7 +73,12 @@ func Ws(url string){
 	}
 }
 
+func Send(message string){
+	channelWriteSocket <- message
+}
+
 func RegisterWebsocketServer(url string) (*websocket.Conn, bool){
+
 	c, _, err := websocket.DefaultDialer.Dial(url, nil)
 
 	if err != nil {
